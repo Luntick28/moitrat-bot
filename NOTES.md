@@ -34,7 +34,7 @@ Telegram-бот для общего бюджета (я + девушка). Пиш
 - `allowed_users.txt` — кому разрешён доступ
 
 ## Где работает
-- Код на GitHub (публично): https://github.com/Ladesov/moitrat-bot
+- Код на GitHub (публично): https://github.com/Luntick28/moitrat-bot
   Секреты (`.env`, `.pythonanywhere`) и траты туда НЕ попадают — их скрывает `.gitignore`.
 - Бот: **@moitrat_bot**
 - Хостинг: PythonAnywhere (бесплатный), аккаунт `proseller`, сайт https://proseller.pythonanywhere.com
