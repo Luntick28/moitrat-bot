@@ -1,0 +1,20 @@
+# Секреты — никогда не публиковать
+.env
+.pythonanywhere
+
+# Личные данные: траты, кто имеет доступ, резервные копии
+expenses.csv
+expenses.csv.tmp
+allowed_users.txt
+backup_*.csv
+
+# Служебные файлы бота
+rates.json
+.last_reminder_check
+*.log
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
