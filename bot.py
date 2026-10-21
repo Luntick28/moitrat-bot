@@ -489,7 +489,8 @@ def handle_update(update):
     elif command:
         send(chat_id, "Не знаю такую команду. /help — список команд.")
     else:
-        _save_expense(chat_id, uid, users[uid], text)
+        for part in split_expenses(text) or [text]:
+            _save_expense(chat_id, uid, users[uid], part)
 
     if os.path.exists(os.path.join(BASE_DIR, ".pythonanywhere")):
         import remind  # только на хостинге: раз в день проверяем, не пора ли продлить
@@ -538,11 +539,29 @@ def transcribe(file_id):
 
 def split_expenses(text):
     """«кофе 5, такси 10 и обед 12» → ["кофе 5", "такси 10", "обед 12"]."""
+    text = _apply_quantities(text)
     parts = re.split(r"[;\n]|,\s|(?<!тыс)(?<!млн)(?<!руб)(?<!дол)\.\s|(?<!\w)(?:и|а ещё|а еще|плюс|потом)(?!\w)", text)
     result = []
     for p in parts:
         result += _split_by_numbers(p)
     return [p.strip(" .,") for p in result if p.strip(" .,") and _NUM_RE.search(p)]
+
+
+_QTY_WORDS = {"один": 1, "одна": 1, "одну": 1, "одно": 1, "два": 2, "две": 2, "три": 3,
+              "четыре": 4, "пять": 5, "шесть": 6, "семь": 7, "восемь": 8, "девять": 9, "десять": 10}
+_QTY = r"(?<![\w.,])(\d{1,2}|" + "|".join(_QTY_WORDS) + r")\s+"
+
+
+def _apply_quantities(text):
+    """«две подписки по 22» → «подписки 44»; «1 подписка за 2000» → «подписка 2000»."""
+    def per_item(m):
+        qty = _QTY_WORDS.get(m.group(1).lower()) or int(m.group(1))
+        price = Decimal(re.sub(r"[  .](?=\d{3})", "", m.group(3)).replace(",", "."))
+        return f"{m.group(2)}{(qty * price).normalize():f}"
+    text = re.sub(_QTY + r"((?:[а-яёa-z]+\s+){1,2}?)по\s+(\d{1,3}(?:[  .]\d{3})+(?!\d)|\d+(?:[.,]\d{1,2})?(?!\d))",
+                  per_item, text, flags=re.IGNORECASE)
+    text = re.sub(_QTY + r"((?:[а-яёa-z]+\s+){1,2}?)за\s+(?=\d)", r"\2", text, flags=re.IGNORECASE)
+    return re.sub(r"(?<!\w)за\s+(?=\d)", "", text, flags=re.IGNORECASE)
 
 
 def _split_by_numbers(text):
