@@ -539,7 +539,31 @@ def transcribe(file_id):
 def split_expenses(text):
     """«кофе 5, такси 10 и обед 12» → ["кофе 5", "такси 10", "обед 12"]."""
     parts = re.split(r"[;\n]|,\s|(?<!тыс)(?<!млн)(?<!руб)(?<!дол)\.\s|(?<!\w)(?:и|а ещё|а еще|плюс|потом)(?!\w)", text)
-    return [p.strip(" .") for p in parts if p and _NUM_RE.search(p)]
+    result = []
+    for p in parts:
+        result += _split_by_numbers(p)
+    return [p.strip(" .,") for p in result if p.strip(" .,") and _NUM_RE.search(p)]
+
+
+def _split_by_numbers(text):
+    """Голос часто приходит без запятых: «еда 50 жилье 700 долларов такси 100».
+    Если чисел несколько — режем так, чтобы на каждый кусок пришлось одно число."""
+    nums = list(_NUM_RE.finditer(text))
+    if len(nums) < 2:
+        return [text]
+    words_first = bool(re.search(r"[a-zа-яё]", text[: nums[0].start()], re.IGNORECASE))
+    cuts = []
+    for num in nums[:-1] if words_first else nums[1:]:
+        if not words_first:
+            cuts.append(num.start())
+            continue
+        end = num.end()  # «еда 50 долларов | жилье…» — валюту оставляем при своей сумме
+        after = re.match(r"\s*([a-zа-яёđ]+|[$₽₫])", text[end:], re.IGNORECASE)
+        if after and (after.group(1).lower() in _WORD_TO_CURRENCY or after.group(1) in CURRENCY_SYMBOLS):
+            end += after.end()
+        cuts.append(end)
+    bounds = [0] + cuts + [len(text)]
+    return [text[a:b] for a, b in zip(bounds, bounds[1:])]
 
 
 def _handle_voice(msg):
