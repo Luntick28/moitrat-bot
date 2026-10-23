@@ -363,14 +363,14 @@ def build_excel():
 
 def _post(url, **kwargs):
     """Запрос с повторами: на бесплатном хостинге связь иногда мигает на секунду."""
-    for attempt in range(4):
+    for attempt in range(7):
         try:
             return requests.post(url, **kwargs)
         except requests.RequestException as e:
-            if attempt == 3:
+            if attempt == 6:
                 raise
             print(f"Связь мигнула ({e.__class__.__name__}), повторяю...")
-            time.sleep(1 + attempt * 2)
+            time.sleep(1 + attempt)
 
 
 def tg(method, **params):
@@ -514,12 +514,31 @@ def _save_expense(chat_id, uid, name, text):
         "category": category or "Другое",
         "description": description,
     }
+    repeat = _recent_same(row)
     add_row(row)
-    if category:
+    if repeat:
+        # Часто это повтор: бот записал, но ответ не дошёл из-за связи — человек отправил ещё раз
+        send(chat_id, _saved_text(row) + f"\n\n⚠️ Такую же трату ты записал в {repeat['date'][11:]}. "
+                      "Если это повтор — удали:",
+             [[{"text": "🗑 Удалить повтор", "callback_data": f"del:{row['id']}"}]])
+    elif category:
         buttons = [[{"text": "✏️ Другая категория", "callback_data": f"edit:{row['id']}"}]]
         send(chat_id, _saved_text(row), buttons)
     else:
         send(chat_id, _saved_text(row) + "\n\nНе понял категорию — выбери:", category_buttons(row["id"]))
+
+
+def _recent_same(row, minutes=10):
+    """Та же сумма, валюта и описание от того же человека за последние 10 минут."""
+    since = (datetime.now(TZ) - timedelta(minutes=minutes)).strftime("%Y-%m-%d %H:%M")
+    for old in reversed(read_rows()):
+        if old["date"] < since:
+            return None
+        if (old["user_id"] == str(row["user_id"]) and old["currency"] == row["currency"]
+                and old["description"] == row["description"]
+                and Decimal(old["amount"]) == Decimal(row["amount"])):
+            return old
+    return None
 
 
 def transcribe(file_id):
@@ -657,6 +676,15 @@ def _handle_button(query):
             text = f"✅ Всё обнулено (стёрто записей: {len(rows)}). Считаем с чистого листа!"
         else:
             text = "Отменено, ничего не стёрто."
+        tg("editMessageText", chat_id=chat_id, message_id=msg["message_id"], text=text)
+        return
+
+    if data.startswith("del:"):
+        row_id = data.split(":", 1)[1]
+        rows = read_rows()
+        left = [r for r in rows if r["id"] != row_id]
+        write_rows(left)
+        text = "🗑 Повтор удалён." if len(left) < len(rows) else "Эта трата уже удалена."
         tg("editMessageText", chat_id=chat_id, message_id=msg["message_id"], text=text)
         return
 
