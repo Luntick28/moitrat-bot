@@ -18,3 +18,5 @@ rates.json
 __pycache__/
 *.pyc
 .DS_Store
+MEMORY.md
+.memory_state.json
