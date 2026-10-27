@@ -20,3 +20,4 @@ __pycache__/
 .DS_Store
 MEMORY.md
 .memory_state.json
+backups/
