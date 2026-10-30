@@ -21,3 +21,7 @@ __pycache__/
 MEMORY.md
 .memory_state.json
 backups/
+
+# личное: тексты и голос владельца
+content/
+.claude/skills/my-voice/
