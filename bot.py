@@ -331,6 +331,13 @@ def month_report(now=None):
     return build_report(rows, f"за {MONTHS[now.month - 1]} {now.year}")
 
 
+def month_buttons(now):
+    """Кнопка «◀️ прошлый месяц» под отчётом за месяц."""
+    prev = now.replace(day=1) - timedelta(days=1)
+    return [[{"text": f"◀️ {MONTHS[prev.month - 1].capitalize()} {prev.year}",
+              "callback_data": f"month:{prev:%Y-%m}"}]]
+
+
 def week_report(now=None):
     """Последние 7 дней, включая сегодня."""
     now = now or datetime.now(TZ)
@@ -426,7 +433,7 @@ HELP = (
     "<b>Отчёты</b> — кнопки внизу чата или команды:\n"
     "/today — траты за сегодня\n"
     "/week — за последние 7 дней\n"
-    "/report — за этот месяц\n\n"
+    "/report — за этот месяц (под отчётом кнопка «◀️» — прошлый месяц)\n\n"
     "<b>Другое</b>\n"
     "/export — вся таблица файлом Excel\n"
     "/undo — удалить твою последнюю трату\n"
@@ -470,7 +477,8 @@ def handle_update(update):
     if command in ("/start", "/help"):
         send(chat_id, HELP, keyboard=MENU_KEYBOARD)
     elif command == "/report":
-        send(chat_id, month_report())
+        now = datetime.now(TZ)
+        send(chat_id, month_report(now), buttons=month_buttons(now))
     elif command == "/week":
         send(chat_id, week_report())
     elif command == "/today":
@@ -672,6 +680,11 @@ def _handle_button(query):
             send(int(new_id), "🎉 Доступ открыт!\n\n" + HELP, keyboard=MENU_KEYBOARD)
         tg("editMessageText", chat_id=chat_id, message_id=msg["message_id"],
            text=f"✅ {_esc(new_name)} теперь может пользоваться ботом.")
+        return
+
+    if data.startswith("month:"):
+        month = datetime.strptime(data[6:], "%Y-%m").replace(tzinfo=TZ)
+        send(chat_id, month_report(month), buttons=month_buttons(month))
         return
 
     if data.startswith("reset:"):

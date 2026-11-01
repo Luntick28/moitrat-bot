@@ -52,5 +52,13 @@ if not (sent[-1] and sent[-1][0][0]["callback_data"].startswith("del:")):
     fails += 1
     print("❌ повтор траты не распознан")
 
+# кнопка «прошлый месяц»: из ноября — октябрь, из января — декабрь прошлого года
+from datetime import datetime
+for now, want in ((datetime(2026, 11, 1, tzinfo=bot.TZ), "month:2026-10"),
+                  (datetime(2027, 1, 15, tzinfo=bot.TZ), "month:2026-12")):
+    if bot.month_buttons(now)[0][0]["callback_data"] != want:
+        fails += 1
+        print(f"❌ кнопка прошлого месяца для {now:%m.%Y}")
+
 print("✅ всё ок" if not fails else f"\nОшибок: {fails}")
 sys.exit(1 if fails else 0)
