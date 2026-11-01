@@ -4,7 +4,8 @@
   .venv/bin/python hosting.py today             — траты за сегодня (с id)
   .venv/bin/python hosting.py last [N]          — последние N трат (по умолчанию 15)
   .venv/bin/python hosting.py delete ID [ID…]   — удалить траты (перед этим копия в backups/)
-  .venv/bin/python hosting.py set ID поле=значение …  — поправить трату (amount, currency, category, description)
+  .venv/bin/python hosting.py set ID поле=значение …  — поправить трату (amount, currency, category, description,
+                                                    date="2026-10-31 23:50" — перенести на другой день)
   .venv/bin/python hosting.py log [N]           — последние строки журнала ошибок
 """
 import csv
@@ -72,8 +73,10 @@ def main(cmd="status", *args):
         save(original, left)
     elif cmd == "set":
         row_id, changes = args[0], dict(a.split("=", 1) for a in args[1:])
-        if not set(changes) <= {"amount", "currency", "category", "description"}:
-            sys.exit("Можно менять только amount, currency, category, description")
+        if not set(changes) <= {"amount", "currency", "category", "description", "date"}:
+            sys.exit("Можно менять только amount, currency, category, description, date")
+        if "date" in changes:
+            datetime.strptime(changes["date"], "%Y-%m-%d %H:%M")  # формат как пишет бот
         if "category" in changes and changes["category"] not in bot.CATEGORIES:
             sys.exit(f"Нет такой категории. Есть: {', '.join(bot.CATEGORIES)}")
         original, rows = load()
