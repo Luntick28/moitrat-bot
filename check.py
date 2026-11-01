@@ -59,6 +59,11 @@ for now, want in ((datetime(2026, 11, 1, tzinfo=bot.TZ), "month:2026-10"),
     if bot.month_buttons(now)[0][0]["callback_data"] != want:
         fails += 1
         print(f"❌ кнопка прошлого месяца для {now:%m.%Y}")
+# у прошлого месяца есть «▶️ следующий», у текущего — нет
+if len(bot.month_buttons(datetime(2026, 9, 1, tzinfo=bot.TZ))[0]) != 2 or \
+        len(bot.month_buttons(datetime.now(bot.TZ))[0]) != 1:
+    fails += 1
+    print("❌ кнопка следующего месяца")
 
 print("✅ всё ок" if not fails else f"\nОшибок: {fails}")
 sys.exit(1 if fails else 0)

@@ -332,10 +332,15 @@ def month_report(now=None):
 
 
 def month_buttons(now):
-    """Кнопка «◀️ прошлый месяц» под отчётом за месяц."""
+    """Под отчётом за месяц: «◀️ прошлый месяц» и, если это не текущий, «следующий ▶️» — листать любой месяц."""
     prev = now.replace(day=1) - timedelta(days=1)
-    return [[{"text": f"◀️ {MONTHS[prev.month - 1].capitalize()} {prev.year}",
-              "callback_data": f"month:{prev:%Y-%m}"}]]
+    nxt = (now.replace(day=28) + timedelta(days=4)).replace(day=1)
+    btns = [{"text": f"◀️ {MONTHS[prev.month - 1].capitalize()} {prev.year}",
+             "callback_data": f"month:{prev:%Y-%m}"}]
+    if nxt.strftime("%Y-%m") <= datetime.now(TZ).strftime("%Y-%m"):
+        btns.append({"text": f"{MONTHS[nxt.month - 1].capitalize()} {nxt.year} ▶️",
+                     "callback_data": f"month:{nxt:%Y-%m}"})
+    return [btns]
 
 
 def week_report(now=None):
