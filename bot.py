@@ -147,9 +147,9 @@ def custom_emoji():
         return {}
 
 
-def cat_icon(cat):
-    """Эмодзи категории для текста сообщения (HTML)."""
-    plain = EMOJI.get(cat, "•")
+def cat_icon(cat, plain=None):
+    """Эмодзи категории (или значка вроде «_chart») для текста сообщения (HTML)."""
+    plain = plain or EMOJI.get(cat, "•")
     emoji_id = custom_emoji().get(cat)
     return f'<tg-emoji emoji-id="{emoji_id}">{plain}</tg-emoji>' if emoji_id else plain
 
@@ -337,7 +337,7 @@ def _total_in_usd(rows, always=False):
         by_cat[r["category"]] = by_cat.get(r["category"], Decimal(0)) + usd
     total = sum(by_cat.values())
     approx = "" if only_usd else "≈ "
-    lines = ["", f"💰 <b>Всего {approx}{_usd(total)}</b>" + ("" if always else " (всё в долларах по курсу)")]
+    lines = ["", f"💵 <b>Всего {approx}{_usd(total)}</b>" + ("" if always else " (всё в долларах по курсу)")]
     for cat, amount in sorted(by_cat.items(), key=_order):
         lines.append(f"   {cat_icon(cat)} {cat}: {approx}{_usd(amount)} ({round(amount * 100 / total)}%)")
     if not always:
@@ -348,7 +348,7 @@ def _total_in_usd(rows, always=False):
 
 def build_report(rows, title, detailed=False):
     """Сводка по тратам. Обычно — всё в долларах по курсу; detailed — ещё и по каждой валюте отдельно."""
-    title = f"📊 <b>Траты {title}</b>"
+    title = f"{cat_icon('_chart', '📊')} <b>Траты {title}</b>"
     if not rows:
         return title + "\n\nПока пусто. Напиши трату, например: <code>12 кофе</code>"
 
