@@ -25,3 +25,6 @@ backups/
 # личное: тексты и голос владельца
 content/
 .claude/skills/my-voice/
+
+# премиум-эмодзи категорий — живые настройки на хостинге
+custom_emoji.json

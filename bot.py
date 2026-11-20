@@ -7,6 +7,7 @@
 import csv
 import hashlib
 import io
+import json
 import os
 import re
 import time
@@ -45,9 +46,13 @@ WEBHOOK_SECRET = hashlib.sha256(TOKEN.encode()).hexdigest()[:32]
 
 # ---------------------------------------------------------------- категории
 
-CATEGORIES = ["Еда", "Транспорт", "Жильё", "Подписки", "Развлечения", "Другое", "Красота", "Спорт", "Одежда"]
+# Порядок не менять: номер категории зашит в кнопки. Новые — только в конец.
+CATEGORIES = ["Продукты", "Транспорт", "Жильё", "Подписки", "Развлечения", "Другое", "Красота", "Спорт", "Одежда",
+              "Здоровье", "Доставка еды"]
 EMOJI = {
-    "Еда": "🍔",
+    "Продукты": "🛒",
+    "Здоровье": "💊",
+    "Доставка еды": "🛵",
     "Транспорт": "🚕",
     "Жильё": "🏠",
     "Подписки": "📱",
@@ -59,11 +64,21 @@ EMOJI = {
 }
 # Слова, по которым бот угадывает категорию (достаточно начала слова)
 KEYWORDS = {
-    "Еда": [
+    "Продукты": [
         "еда", "продукт", "кофе", "капучино", "латте", "супермаркет", "магазин",
         "обед", "завтрак", "ужин", "перекус", "вода", "фрукт", "овощ", "хлеб",
-        "молоко", "мясо", "доставк", "grab food", "grabfood", "shopee food",
-        "food", "coffee", "pho", "фо бо", "banh mi", "бань ми", "лавка", "пятёрочк", "пятерочк", "вкусвилл",
+        "молоко", "мясо", "coffee", "pho", "фо бо", "banh mi", "бань ми", "лавка", "пятёрочк", "пятерочк", "вкусвилл",
+    ],
+    "Доставка еды": [
+        "доставк", "grab food", "grabfood", "граб фуд", "грэб фуд", "shopee food", "shopeefood", "baemin",
+        "be food", "befood", "food", "фуд", "заказ ед", "фастфуд", "фаст фуд", "kfc", "кфс", "кфц",
+        "макдон", "mcdonald", "бургер", "burger", "пицц", "pizza", "lotteria", "лоттери", "шаурм", "шаверм",
+        "суши", "ролл",
+    ],
+    "Здоровье": [
+        "здоров", "зуб", "стомат", "дантист", "dentist", "аптек", "pharmacy", "лекарств", "таблет",
+        "врач", "доктор", "клиник", "clinic", "больниц", "госпитал", "hospital", "анализ", "витамин",
+        "лечени", "пломб", "укол", "прививк", "мазь", "капли", "медицин", "терапевт", "окулист", "узи",
     ],
     "Транспорт": [
         "транспорт", "такси", "grab", "грэб", "грab", "gojek", "uber", "убер",
@@ -113,6 +128,27 @@ _KEYWORD_LIST = sorted(
     key=lambda pair: -len(pair[0]),
 )
 _KEYWORD_LIST.insert(0, ("аренда байк", "Транспорт"))
+
+
+
+# Премиум-эмодзи категорий (Telegram Premium у владельца бота). Владелец задаёт их командой /emoji,
+# бот хранит выбор в этом файле на хостинге. Нет файла — обычные эмодзи из EMOJI.
+CUSTOM_EMOJI_FILE = os.path.join(BASE_DIR, "custom_emoji.json")
+
+
+def custom_emoji():
+    try:
+        with open(CUSTOM_EMOJI_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def cat_icon(cat):
+    """Эмодзи категории для текста сообщения (HTML)."""
+    plain = EMOJI.get(cat, "•")
+    emoji_id = custom_emoji().get(cat)
+    return f'<tg-emoji emoji-id="{emoji_id}">{plain}</tg-emoji>' if emoji_id else plain
 
 
 def guess_category(description):
@@ -273,11 +309,17 @@ def get_rates():
         return cached["rates"] if cached else None
 
 
-def _total_in_usd(rows):
-    """Общий итог всех валют в долларах по курсу (только если валют больше одной)."""
-    if len({r["currency"] for r in rows}) < 2:
+def _usd(amount):
+    """Сумма в долларах для отчёта: крупные — целыми, мелкие — с центами."""
+    return fmt_money(round(amount) if amount >= 100 else amount.quantize(Decimal("0.01")), "USD")
+
+
+def _total_in_usd(rows, always=False):
+    """Общий итог всех валют в долларах по курсу. В подробном отчёте — только если валют больше одной."""
+    only_usd = {r["currency"] for r in rows} == {"USD"}
+    if not always and len({r["currency"] for r in rows}) < 2:
         return []
-    rates = get_rates()
+    rates = {"USD": 1} if only_usd else get_rates()
     if not rates:
         return []
     by_cat = {}
@@ -285,22 +327,27 @@ def _total_in_usd(rows):
         usd = Decimal(r["amount"]) / Decimal(str(rates[r["currency"]]))
         by_cat[r["category"]] = by_cat.get(r["category"], Decimal(0)) + usd
     total = sum(by_cat.values())
-    lines = ["", f"💰 <b>Всего ≈ {fmt_money(round(total), 'USD')}</b> (всё в долларах по курсу)"]
+    approx = "" if only_usd else "≈ "
+    lines = ["", f"💰 <b>Всего {approx}{_usd(total)}</b>" + ("" if always else " (всё в долларах по курсу)")]
     for cat, amount in sorted(by_cat.items(), key=lambda kv: -kv[1]):
-        lines.append(f"   {EMOJI.get(cat, '•')} {cat}: ≈ {fmt_money(round(amount), 'USD')} ({round(amount * 100 / total)}%)")
-    others = [f"{fmt_money(round(Decimal(str(rates[c]))), c)}" for c in CURRENCIES if c != "USD"]
-    lines.append(f"<i>Курс: $1 = {' = '.join(others)}</i>")
+        lines.append(f"   {cat_icon(cat)} {cat}: {approx}{_usd(amount)} ({round(amount * 100 / total)}%)")
+    if not always:
+        others = [f"{fmt_money(round(Decimal(str(rates[c]))), c)}" for c in CURRENCIES if c != "USD"]
+        lines.append(f"<i>Курс: $1 = {' = '.join(others)}</i>")
     return lines
 
 
-def build_report(rows, title):
-    """Сводка по списку трат: итог по каждой валюте и разбивка по категориям."""
+def build_report(rows, title, detailed=False):
+    """Сводка по тратам. Обычно — всё в долларах по курсу; detailed — ещё и по каждой валюте отдельно."""
     title = f"📊 <b>Траты {title}</b>"
     if not rows:
         return title + "\n\nПока пусто. Напиши трату, например: <code>12 кофе</code>"
 
     lines = [title]
-    for code, info in CURRENCIES.items():
+    brief = [] if detailed else _total_in_usd(rows, always=True)
+    if brief:  # нет курса — покажем подробно, чтобы не потерять суммы
+        lines += brief
+    for code, info in ({} if brief else CURRENCIES).items():
         cur_rows = [r for r in rows if r["currency"] == code]
         if not cur_rows:
             continue
@@ -312,9 +359,10 @@ def build_report(rows, title):
         lines.append(f"{info['icon']} <b>{info['name']}: {fmt_money(total, code)}</b>")
         for cat, amount in sorted(by_cat.items(), key=lambda kv: -kv[1]):
             percent = round(amount * 100 / total)
-            lines.append(f"   {EMOJI.get(cat, '•')} {cat}: {fmt_money(amount, code)} ({percent}%)")
+            lines.append(f"   {cat_icon(cat)} {cat}: {fmt_money(amount, code)} ({percent}%)")
 
-    lines += _total_in_usd(rows)
+    if not brief:
+        lines += _total_in_usd(rows)
 
     counts = {}
     for r in rows:
@@ -325,10 +373,25 @@ def build_report(rows, title):
     return "\n".join(lines)
 
 
-def month_report(now=None):
+def month_report(now=None, detailed=False):
     now = now or datetime.now(TZ)
     rows = [r for r in read_rows() if r["date"].startswith(now.strftime("%Y-%m"))]
-    return build_report(rows, f"за {MONTHS[now.month - 1]} {now.year}")
+    return build_report(rows, f"за {MONTHS[now.month - 1]} {now.year}", detailed)
+
+
+REPORT_KEY = {"month": "%Y-%m", "week": "%Y-%m-%d", "today": "%Y-%m-%d"}
+
+
+def report_text(kind, now, detailed=False):
+    return {"month": month_report, "week": week_report, "today": today_report}[kind](now, detailed)
+
+
+def report_buttons(kind, now, detailed=False):
+    """Под отчётом: «🔍 Подробно по валютам» / «Кратко, в долларах», у месяца ещё ◀️ ▶️."""
+    key = f"{kind}:{now.strftime(REPORT_KEY[kind])}"
+    toggle = ({"text": "💵 Кратко, в долларах", "callback_data": f"brief:{key}"} if detailed
+              else {"text": "🔍 Подробно по валютам", "callback_data": f"detail:{key}"})
+    return [[toggle]] + (month_buttons(now) if kind == "month" else [])
 
 
 def month_buttons(now):
@@ -343,18 +406,19 @@ def month_buttons(now):
     return [btns]
 
 
-def week_report(now=None):
+def week_report(now=None, detailed=False):
     """Последние 7 дней, включая сегодня."""
     now = now or datetime.now(TZ)
     start = now - timedelta(days=6)
-    rows = [r for r in read_rows() if r["date"][:10] >= start.strftime("%Y-%m-%d")]
-    return build_report(rows, f"за неделю ({start:%d.%m} – {now:%d.%m})")
+    rows = [r for r in read_rows()
+            if start.strftime("%Y-%m-%d") <= r["date"][:10] <= now.strftime("%Y-%m-%d")]
+    return build_report(rows, f"за неделю ({start:%d.%m} – {now:%d.%m})", detailed)
 
 
-def today_report(now=None):
+def today_report(now=None, detailed=False):
     now = now or datetime.now(TZ)
     rows = [r for r in read_rows() if r["date"].startswith(now.strftime("%Y-%m-%d"))]
-    return build_report(rows, f"за сегодня ({now:%d.%m})")
+    return build_report(rows, f"за сегодня ({now:%d.%m})", detailed)
 
 
 def build_excel():
@@ -413,8 +477,14 @@ def send(chat_id, text, buttons=None, keyboard=None):
 
 def category_buttons(row_id):
     order = [c for c in CATEGORIES if c != "Другое"] + ["Другое"]
-    btns = [{"text": f"{EMOJI[c]} {c}", "callback_data": f"cat:{row_id}:{CATEGORIES.index(c)}"}
-            for c in order]
+    premium = custom_emoji()
+    btns = []
+    for c in order:
+        btn = {"text": f"{EMOJI[c]} {c}", "callback_data": f"cat:{row_id}:{CATEGORIES.index(c)}"}
+        if premium.get(c):
+            btn["text"] = c
+            btn["icon_custom_emoji_id"] = premium[c]
+        btns.append(btn)
     return [btns[i:i + 2] for i in range(0, len(btns), 2)]
 
 
@@ -424,7 +494,7 @@ def _esc(text):
 
 def _saved_text(row):
     desc = f" ({_esc(row['description'])})" if row["description"] else ""
-    return (f"✅ Записал: {EMOJI[row['category']]} {row['category']} — "
+    return (f"✅ Записал: {cat_icon(row['category'])} {row['category']} — "
             f"{fmt_money(row['amount'], row['currency'])}{desc}")
 
 
@@ -481,13 +551,10 @@ def handle_update(update):
     command = text.split()[0].split("@")[0].lower() if text.startswith("/") else None
     if command in ("/start", "/help"):
         send(chat_id, HELP, keyboard=MENU_KEYBOARD)
-    elif command == "/report":
+    elif command in ("/report", "/week", "/today"):
+        kind = {"/report": "month", "/week": "week", "/today": "today"}[command]
         now = datetime.now(TZ)
-        send(chat_id, month_report(now), buttons=month_buttons(now))
-    elif command == "/week":
-        send(chat_id, week_report())
-    elif command == "/today":
-        send(chat_id, today_report())
+        send(chat_id, report_text(kind, now), buttons=report_buttons(kind, now))
     elif command == "/export":
         if not read_rows():
             send(chat_id, "Пока нечего выгружать — трат ещё нет.")
@@ -497,6 +564,11 @@ def handle_update(update):
                       files={"document": (filename, build_excel())}, timeout=60)
     elif command == "/undo":
         _undo(chat_id, uid)
+    elif command == "/emoji":
+        if uid != next(iter(users)):
+            send(chat_id, "Эмодзи категорий меняет только владелец бота.")
+            return
+        send(chat_id, set_custom_emoji(msg["text"], msg.get("entities", [])))
     elif command == "/reset":
         if uid != next(iter(users)):
             send(chat_id, "Обнулить траты может только владелец бота.")
@@ -668,6 +740,71 @@ def _ask_owner(users, uid, name):
          [[{"text": f"✅ Разрешить {name}", "callback_data": data + short}]])
 
 
+# Какие обычные эмодзи подходят категории — по ним ищем картинку в премиум-наборе (первые — лучше)
+EMOJI_MATCH = {
+    "Продукты": "🛒🥦🍎🥑🥕🛍🥖🧺",
+    "Доставка еды": "🛵🍔🍕🥡🍟🌯🍱🍜",
+    "Транспорт": "🚕🚗🚘🛺🚌🛵✈🚀",
+    "Жильё": "🏠🏡🏘🏢🛏🔑",
+    "Подписки": "📱📲💳🔔📺🎧",
+    "Развлечения": "🎉🥳🍹🍸🎬🎮🎊🍾",
+    "Красота": "💅💄✂💇💋🪞",
+    "Спорт": "🏋💪⚽🏃🥊🏆",
+    "Одежда": "👕👗👟👜🧥👖",
+    "Здоровье": "💊🦷🩺❤🏥💉",
+    "Другое": "📦🛍🎁📌✨",
+}
+
+
+def _emoji_from_pack(sample_id, chosen):
+    """Находим набор, откуда этот премиум-эмодзи, и подбираем из него по картинке на каждую категорию."""
+    try:
+        sticker = tg("getCustomEmojiStickers", custom_emoji_ids=[sample_id])["result"][0]
+        stickers = tg("getStickerSet", name=sticker["set_name"])["result"]["stickers"]
+    except (KeyError, IndexError, TypeError):
+        return []
+    plain = lambda s: s.replace("️", "")
+    done = []
+    for cat, wanted in EMOJI_MATCH.items():
+        for want in plain(wanted):
+            hit = next((s for s in stickers if plain(s.get("emoji", "")) == want), None)
+            if hit:
+                chosen[cat] = hit["custom_emoji_id"]
+                done.append(cat)
+                break
+    return done
+
+
+def set_custom_emoji(text, entities):
+    """/emoji + строки «Продукты 🥦» с премиум-эмодзи → запоминаем эмодзи для категорий."""
+    raw = text.encode("utf-16-le")  # Telegram считает позиции в UTF-16
+    lines = text.split("\n")
+    chosen = custom_emoji()
+    done = []
+    for e in entities:
+        if e.get("type") != "custom_emoji":
+            continue
+        line = lines[raw[:e["offset"] * 2].decode("utf-16-le").count("\n")].lower()
+        for cat in sorted(CATEGORIES, key=len, reverse=True):
+            if cat.lower() in line and cat not in done:
+                chosen[cat] = e["custom_emoji_id"]
+                done.append(cat)
+                break
+    ids = [e["custom_emoji_id"] for e in entities if e.get("type") == "custom_emoji"]
+    if not done and ids:  # просто эмодзи без названий → берём весь его набор и подбираем сами
+        done = _emoji_from_pack(ids[0], chosen)
+    if not done:
+        return ("Пришли /emoji и один премиум-эмодзи из набора, который нравится, — подберу из него всё сам.\n"
+                "Или вручную, по строке на категорию:\n/emoji\nПродукты 🥦\nДоставка еды 🛵\n\n"
+                "Категории: " + ", ".join(CATEGORIES))
+    with open(CUSTOM_EMOJI_FILE, "w", encoding="utf-8") as f:
+        json.dump(chosen, f, ensure_ascii=False, indent=1)
+    missing = [c for c in CATEGORIES if c not in chosen]
+    return ("✅ Эмодзи обновлены:\n" + "\n".join(f"{cat_icon(c)} {c}" for c in done)
+            + (f"\n\nВ наборе не нашлось подходящих для: {', '.join(missing)}. "
+               f"Их можно задать вручную: /emoji и строка «Категория эмодзи»." if missing else ""))
+
+
 def _handle_button(query):
     uid = query["from"]["id"]
     data = query.get("data", "")
@@ -689,7 +826,16 @@ def _handle_button(query):
 
     if data.startswith("month:"):
         month = datetime.strptime(data[6:], "%Y-%m").replace(tzinfo=TZ)
-        send(chat_id, month_report(month), buttons=month_buttons(month))
+        send(chat_id, month_report(month), buttons=report_buttons("month", month))
+        return
+
+    if data.startswith(("detail:", "brief:")):  # переключить тот же отчёт: подробно ↔ кратко
+        mode, kind, key = data.split(":", 2)
+        now = datetime.strptime(key, REPORT_KEY[kind]).replace(tzinfo=TZ)
+        detailed = mode == "detail"
+        tg("editMessageText", chat_id=chat_id, message_id=msg["message_id"], parse_mode="HTML",
+           text=report_text(kind, now, detailed),
+           reply_markup={"inline_keyboard": report_buttons(kind, now, detailed)})
         return
 
     if data.startswith("reset:"):
