@@ -49,6 +49,9 @@ WEBHOOK_SECRET = hashlib.sha256(TOKEN.encode()).hexdigest()[:32]
 # Порядок не менять: номер категории зашит в кнопки. Новые — только в конец.
 CATEGORIES = ["Продукты", "Транспорт", "Жильё", "Подписки", "Развлечения", "Другое", "Красота", "Спорт", "Одежда",
               "Здоровье", "Доставка еды"]
+# В каком порядке категории видны в кнопках и отчётах (на номера в кнопках не влияет)
+CATEGORY_ORDER = ["Жильё", "Транспорт", "Спорт", "Продукты", "Доставка еды", "Развлечения", "Красота",
+                  "Здоровье", "Одежда", "Подписки", "Другое"]
 EMOJI = {
     "Продукты": "🛒",
     "Здоровье": "💊",
@@ -309,6 +312,12 @@ def get_rates():
         return cached["rates"] if cached else None
 
 
+def _order(item):
+    """Категории в отчёте — в порядке CATEGORY_ORDER, неизвестные — в конце."""
+    cat = item[0]
+    return CATEGORY_ORDER.index(cat) if cat in CATEGORY_ORDER else len(CATEGORY_ORDER)
+
+
 def _usd(amount):
     """Сумма в долларах для отчёта: крупные — целыми, мелкие — с центами."""
     return fmt_money(round(amount) if amount >= 100 else amount.quantize(Decimal("0.01")), "USD")
@@ -329,7 +338,7 @@ def _total_in_usd(rows, always=False):
     total = sum(by_cat.values())
     approx = "" if only_usd else "≈ "
     lines = ["", f"💰 <b>Всего {approx}{_usd(total)}</b>" + ("" if always else " (всё в долларах по курсу)")]
-    for cat, amount in sorted(by_cat.items(), key=lambda kv: -kv[1]):
+    for cat, amount in sorted(by_cat.items(), key=_order):
         lines.append(f"   {cat_icon(cat)} {cat}: {approx}{_usd(amount)} ({round(amount * 100 / total)}%)")
     if not always:
         others = [f"{fmt_money(round(Decimal(str(rates[c]))), c)}" for c in CURRENCIES if c != "USD"]
@@ -357,7 +366,7 @@ def build_report(rows, title, detailed=False):
             by_cat[r["category"]] = by_cat.get(r["category"], Decimal(0)) + Decimal(r["amount"])
         lines.append("")
         lines.append(f"{info['icon']} <b>{info['name']}: {fmt_money(total, code)}</b>")
-        for cat, amount in sorted(by_cat.items(), key=lambda kv: -kv[1]):
+        for cat, amount in sorted(by_cat.items(), key=_order):
             percent = round(amount * 100 / total)
             lines.append(f"   {cat_icon(cat)} {cat}: {fmt_money(amount, code)} ({percent}%)")
 
@@ -476,7 +485,7 @@ def send(chat_id, text, buttons=None, keyboard=None):
 
 
 def category_buttons(row_id):
-    order = [c for c in CATEGORIES if c != "Другое"] + ["Другое"]
+    order = CATEGORY_ORDER
     premium = custom_emoji()
     btns = []
     for c in order:

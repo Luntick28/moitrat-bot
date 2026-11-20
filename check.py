@@ -110,7 +110,10 @@ bot.tg = real_tg
 if bot.custom_emoji().get("Здоровье") != "333" or bot.custom_emoji().get("Жильё") != "444":
     fails += 1
     print("❌ подбор из набора", bot.custom_emoji())
-btn = bot.category_buttons("x")[0][0]
+btn = next(b for row in bot.category_buttons("x") for b in row if b["text"] == "Продукты")
+if bot.category_buttons("x")[0][0]["callback_data"] != "cat:x:2":  # первой в кнопках — «Жильё»
+    fails += 1
+    print("❌ порядок кнопок категорий")
 if btn.get("icon_custom_emoji_id") != "111" or 'emoji-id="111"' not in bot.cat_icon("Продукты"):
     fails += 1
     print("❌ премиум-эмодзи не попали в кнопку или текст", btn)
